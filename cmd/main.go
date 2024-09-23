@@ -3,11 +3,16 @@
 package main
 
 import (
+	"io"
 	"log"
 	"net/http"
+	"os/exec"
 
+	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
 )
+
+// ... existing upgrader code ...
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -16,7 +21,6 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// wsHandler handles WebSocket requests from the peer.
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -25,18 +29,45 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Echo messages back to the client
+	// Start a local shell
+	cmd := exec.Command("bash") // Use "cmd" for Windows
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		log.Println("PTY start error:", err)
+		return
+	}
+	defer func() { _ = ptmx.Close() }() // Best effort
+
+	// Handle input from WebSocket to PTY
+	go func() {
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				log.Println("WebSocket read error:", err)
+				cmd.Process.Kill()
+				break
+			}
+			_, err = ptmx.Write(msg)
+			if err != nil {
+				log.Println("PTY write error:", err)
+				break
+			}
+		}
+	}()
+
+	// Handle output from PTY to WebSocket
+	buf := make([]byte, 1024)
 	for {
-		messageType, message, err := conn.ReadMessage()
+		n, err := ptmx.Read(buf)
 		if err != nil {
-			log.Println("Read error:", err)
+			if err != io.EOF {
+				log.Println("PTY read error:", err)
+			}
 			break
 		}
-		log.Printf("Received: %s", message)
-
-		err = conn.WriteMessage(messageType, message)
+		err = conn.WriteMessage(websocket.BinaryMessage, buf[:n])
 		if err != nil {
-			log.Println("Write error:", err)
+			log.Println("WebSocket write error:", err)
 			break
 		}
 	}
