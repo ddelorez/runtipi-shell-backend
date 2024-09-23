@@ -6,7 +6,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
@@ -17,12 +19,17 @@ import (
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
-		allowedOrigins := map[string]bool{
-			"http://frontend":             true,
-			"http://localhost":            true,
-			"http://your-frontend-domain": true,
+		allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+		if allowedOrigins == "" {
+			allowedOrigins = "http://localhost"
 		}
-		return allowedOrigins[origin]
+		origins := strings.Split(allowedOrigins, ",")
+		for _, o := range origins {
+			if origin == o {
+				return true
+			}
+		}
+		return false
 	},
 }
 
