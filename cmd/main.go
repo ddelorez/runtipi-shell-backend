@@ -14,7 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// ... existing upgrader code ...
+// Upgrader is used to upgrade an HTTP connection to a WebSocket connection
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -41,8 +41,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Start a local shell
-	cmd := exec.Command("bash") // Use "cmd" for Windows
+	// Start a local shell - account for OS differences
+	shell := os.Getenv("SHELL_COMMAND")
+	if shell == "" {
+		shell = "bash" //Default Shell
+	}
+	cmd := exec.Command(shell) // Use "cmd" for Windows
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		log.Println("PTY start error:", err)
