@@ -63,7 +63,87 @@ import (
         "github.com/gorilla/websocket"
 )
 
-// Rest of the code...
+var upgrader = websocket.Upgrader{
+    CheckOrigin: func(r *http.Request) bool {
+        origin := r.Header.Get("Origin")
+        allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+        if allowedOrigins == "" {
+            allowedOrigins = "http://localhost"
+        }
+        origins := strings.Split(allowedOrigins, ",")
+        for _, o := range origins {
+            if origin == o {
+                return true
+            }
+        }
+        return false
+    },
+}
+
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+        log.Println("Upgrade error:", err)
+        return
+    }
+    defer conn.Close()
+
+    shell := os.Getenv("SHELL_COMMAND")
+    if shell == "" {
+        shell = "bash" // Default shell
+    }
+
+    cmd := exec.Command(shell)
+    ptmx, err := pty.Start(cmd)
+    if err != nil {
+        log.Println("PTY start error:", err)
+        return
+    }
+    defer func() { _ = ptmx.Close() }() // Best effort
+
+    // Handle input from WebSocket to PTY
+    go func() {
+        for {
+            _, msg, err := conn.ReadMessage()
+            if err != nil {
+                log.Println("WebSocket read error:", err)
+                cmd.Process.Kill()
+                break
+            }
+            _, err = ptmx.Write(msg)
+            if err != nil {
+                log.Println("PTY write error:", err)
+                break
+            }
+        }
+    }()
+
+    // Handle output from PTY to WebSocket
+    buf := make([]byte, 1024)
+    for {
+        n, err := ptmx.Read(buf)
+        if err != nil {
+            if err != io.EOF {
+                log.Println("PTY read error:", err)
+            }
+            break
+        }
+        err = conn.WriteMessage(websocket.BinaryMessage, buf[:n])
+        if err != nil {
+            log.Println("WebSocket write error:", err)
+            break
+        }
+    }
+}
+
+func main() {
+    http.HandleFunc("/ws", wsHandler)
+    log.Println("WebSocket server started on :8080")
+    err := http.ListenAndServe(":8080", nil)
+    if err != nil {
+        log.Fatal("ListenAndServe:", err)
+    }
+}
 ```
 
 ## Step 3: Install Dependencies
@@ -86,7 +166,42 @@ Open `Dockerfile` and add:
 # Build Stage
 FROM golang:1.18-alpine AS builder
 
-# Rest of the Dockerfile content...
+# Set the working directory
+WORKDIR /app
+
+# Copy go.mod and go.sum files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy the source code
+COPY . .
+
+# Build the Go application
+RUN go build -o backend cmd/main.go
+
+# Final Stage
+FROM alpine:latest
+
+# Install bash
+RUN apk add --no-cache bash
+
+# Set the working directory
+WORKDIR /root/
+
+# Copy the binary from the builder stage
+COPY --from=builder /app/backend .
+
+# Expose port 8080
+EXPOSE 8080
+
+# Set environment variables (optional)
+ENV ALLOWED_ORIGINS=http://localhost
+ENV SHELL_COMMAND=bash
+
+# Run the application
+CMD ["./backend"]
 ```
 
 ## Step 5: Build and Run the Application
