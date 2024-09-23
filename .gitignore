@@ -1,0 +1,8 @@
+# .gitignore
+/bin/
+/vendor/
+*.log
+*.env
+id_rsa
+id_rsa.pub
+
