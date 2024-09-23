@@ -1,5 +1,5 @@
-Web-Based Shell Interface Setup Guide
-This guide walks you through setting up a web-based shell interface for your home server. We'll cover everything from creating the project structure to building and running the application using Go and Docker.
+# Web-Based Shell Interface Setup Guide
+## This guide walks you through setting up a web-based shell interface for your home server. We'll cover everything from creating the project structure to building and running the application using Go and Docker.
 
 ## Prerequisites
 - Basic Knowledge: Familiarity with command-line operations.
