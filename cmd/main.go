@@ -16,8 +16,13 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		// Allow all connections by default
-		return true
+		origin := r.Header.Get("Origin")
+		allowedOrigins := map[string]bool{
+			"http://frontend":             true,
+			"http://localhost":            true,
+			"http://your-frontend-domain": true,
+		}
+		return allowedOrigins[origin]
 	},
 }
 
